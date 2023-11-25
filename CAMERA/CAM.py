@@ -17,19 +17,16 @@ import time
 import shutil
 
 from datetime import datetime
-from PIL import Image, ImageOps, ImageEnhance, ImageMath
-from pyzbar.pyzbar import decode
 from picamera2 import Picamera2
 from libcamera import controls
 import RPi.GPIO as GPIO
 from rclone_python import rclone
 
-
-import ftplib
-
+import utilities
+import wifi
 
 # flags
-processForEInk = False
+processForEInk = True
 
 
 # params
@@ -110,64 +107,7 @@ def captureImage():
     capturePath =  datePath + captureName + captureExt
     cam.capture_file(capturePath)
     return capturePath
-
-
-
-# add SSID and Password to Pi's wifi list
-def addToWifiList(ssid, password):
-    # this function overrides the wifi instead of adding to the list - can't read the wpa_supplicant without getting corrupt data or errors (some permissions issue)
-
-    config_lines = [
-        'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev',
-        'update_config=1',
-        'country=NL',
-        '\n',
-        'network={',
-        '\tssid="{}"'.format(ssid),
-        '\tpsk="{}"'.format(password),
-        '}'
-        ]
-    config = '\n'.join(config_lines)
     
-    # give access and writing
-    try:
-        os.popen("sudo chmod a+w /etc/wpa_supplicant/wpa_supplicant.conf")
-    except Exception as e:
-        print(f"error setting rights to wpa_supplicant file: {e}")
-    
-    # writing to file
-    try:
-        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "w") as wifi:
-            wifi.write(config)
-
-        # refresh configs
-        os.popen("sudo wpa_cli -i wlan0 reconfigure")
-
-    except Exception as e:
-        print(f"error writing wifi supplicant: {e}")
-
-
-
-# connect to wifi
-def connectToWifiFromQR(capturePath):
-    try:
-        img = Image.open(capturePath)
-        data = decode(img) # search for codes
-        if len(data) > 0: # if qr found
-            s = data[0].data.decode("utf-8").split(';')
-            ssid = s[0][7:]
-            pw = s[2][2:]
-            print(f'found wifi! adding to list {ssid}:{pw}')
-            addToWifiList(ssid, pw)
-            doWifiBlink()
-            return True
-        return False
-    
-    except Exception as e:
-        print(f'error while adding wifi from qr: {e}')
-        return False
-    
-
 
 # 4x fast blinking when connected to wifi
 def doWifiBlink():
@@ -179,51 +119,17 @@ def doWifiBlink():
         time.sleep(wifiBlinkDuration)
     
     
-    
-# prepare any image for the display
+# prepare and rename image as needed
 def prepareImage(imagePath):
-
     now  = datetime.now().strftime('%H%M%S')
     preparedImagePath =  datePath + prepareName + now + prepareExt
 
     if processForEInk:
-        # get image
-        img = Image.open(imagePath)
-
-        # correct resolution for display
-        img = ImageOps.fit(img, size)
-
-        # make RGB only
-        img.convert('RGB')
-
-        # initial overall saturation
-        saturation = ImageEnhance.Color(img)
-        img = saturation.enhance(3)
-
-
-        # magenta is a problematic color on ink displays
-        r, g, b = img.split()
-        imgMask = ImageMath.eval("255*( (float(r)/255)**10*1.3 * (float(b)/255)**10*1.3 * (1-(float(g)/255)**10)*1.3 * 4 )", r=r, g=g, b=b) # (strong) mask magenta
-        imgMask = imgMask.convert('L')
-
-        # desaturated version to overlay
-        saturation = ImageEnhance.Color(img)
-        imgFixed = saturation.enhance(.3)
-        brightness = ImageEnhance.Brightness(imgFixed)
-        imgFixed = brightness.enhance(1.8)
-        r, g, b = imgFixed.split()
-        g = g.point(lambda i: i * .9) # slightly less green
-        b = b.point(lambda i: i * .8) # less blue
-        imgFixed = Image.merge('RGB', (r, g, b))
-
-        # save
-        imgFixed.save(preparedImagePath)
-
+        utilities.processForEInk(imagePath, preparedImagePath, size)
     else:
         # Just copy the file instead of processing it.
         shutil.copy(imagePath, preparedImagePath)
 
-    
     return preparedImagePath
 
 
@@ -315,7 +221,7 @@ def startButton(callback):
                     capturedImagePath = captureImage()
 
                     # connect to Wifi from QR (if any)
-                    connectToWifiFromQR(capturedImagePath)
+                    wifi.connectToWifiFromQR(capturedImagePath)
 
                     # delete from local storage
                     deleteFiles([capturedImagePath])
@@ -363,7 +269,7 @@ def buttonPressed():
     print('checking if qr')
 
     # connect to Wifi from QR (if any)
-    wifiFound = connectToWifiFromQR(capturedImagePath)
+    wifiFound = wifi.connectToWifiFromQR(capturedImagePath)
     if(wifiFound):
         enableLight(True)
         print("wifi qr code doesn't need to be processed")
@@ -404,6 +310,11 @@ def start():
     initCam()
     startButton(buttonPressed)
 
-enableLight(True)
-time.sleep(1) # arbitrary wait time to initialize (camera module seemed to have a some issues without this)
-start()
+
+try:
+    enableLight(True)
+    time.sleep(1) # arbitrary wait time to initialize (camera module seemed to have a some issues without this)
+    start()
+except:
+    enableLight(False)
+    raise
