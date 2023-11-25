@@ -12,7 +12,9 @@
 # imports
 import os
 import time
+import shutil
 
+from datetime import datetime
 from PIL import Image, ImageOps, ImageEnhance, ImageMath
 from pyzbar.pyzbar import decode
 from picamera2 import Picamera2
@@ -25,15 +27,20 @@ import ftplib
 import logins
 
 
+# flags
+processForEInk = False
+
 
 # params
-keepTryingConnectionForever = True
+keepTryingConnectionForever = False
 size = 600, 448
-captureName = 'captures/capture'
-prepareName = 'captures/img'
+
+
+captureName = 'capture'
+prepareName = 'img'
 captureExt = '.jpg'
 prepareExt = '.jpg'
-drive = "drive:captures"
+drive = "drive:captures/"
 buttonPressCooldown = 0.5
 newCaptureCooldown = 69
 blinkingSpeed = 3
@@ -46,6 +53,11 @@ hostingPass = logins.PASSWORD
 # placeholders
 scriptPath = os.path.realpath(__file__)
 scriptDir = os.path.dirname(scriptPath)
+
+basePath = 'captures/'
+date  = datetime.now().strftime('%Y/%m/%d/')
+datePath = os.path.join(scriptDir, basePath + date)  
+
 
 cam = None
 gpiopin = 21
@@ -79,11 +91,13 @@ def enableLight(v):
 # delete all files in local storage
 def initLocal():
     try:
-        capturePath = os.path.dirname(os.path.join(scriptDir, captureName))
-        for root, dirs, files in os.walk(capturePath):
+        deletePath = os.path.dirname(os.path.join(scriptDir, basePath))
+        for root, dirs, files in os.walk(deletePath, topdown=False):
             for f in files:
                 os.unlink(os.path.join(root, f))
                 print('deleted ' + f)
+            for d in dirs:
+                os.rmdir(os.path.join(root, d))
     except Exception as e:
         print(f'error while cleaning up local folder: {e}')
 
@@ -91,7 +105,12 @@ def initLocal():
 
 # use camera
 def captureImage():
-    capturePath = os.path.join(scriptDir, captureName + captureExt)  
+    if not os.path.exists(datePath):
+        # Create a new directory because it does not exist
+        os.makedirs(datePath)
+        print(f"The new directory is created: {datePath}")
+
+    capturePath =  datePath + captureName + captureExt
     cam.capture_file(capturePath)
     return capturePath
 
@@ -166,44 +185,53 @@ def doWifiBlink():
     
 # prepare any image for the display
 def prepareImage(imagePath):
-    # get image
-    img = Image.open(imagePath)
 
-    # correct resolution for display
-    img = ImageOps.fit(img, size)
+    now  = datetime.now().strftime('%H%M%S')
+    preparedImagePath =  datePath + prepareName + now + prepareExt
 
-    # make RGB only
-    img.convert('RGB')
+    if processForEInk:
+        # get image
+        img = Image.open(imagePath)
 
-    # initial overall saturation
-    saturation = ImageEnhance.Color(img)
-    img = saturation.enhance(3)
+        # correct resolution for display
+        img = ImageOps.fit(img, size)
+
+        # make RGB only
+        img.convert('RGB')
+
+        # initial overall saturation
+        saturation = ImageEnhance.Color(img)
+        img = saturation.enhance(3)
 
 
-    # magenta is a problematic color on ink displays
-    r, g, b = img.split()
-    imgMask = ImageMath.eval("255*( (float(r)/255)**10*1.3 * (float(b)/255)**10*1.3 * (1-(float(g)/255)**10)*1.3 * 4 )", r=r, g=g, b=b) # (strong) mask magenta
-    imgMask = imgMask.convert('L')
+        # magenta is a problematic color on ink displays
+        r, g, b = img.split()
+        imgMask = ImageMath.eval("255*( (float(r)/255)**10*1.3 * (float(b)/255)**10*1.3 * (1-(float(g)/255)**10)*1.3 * 4 )", r=r, g=g, b=b) # (strong) mask magenta
+        imgMask = imgMask.convert('L')
 
-    # desaturated version to overlay
-    saturation = ImageEnhance.Color(img)
-    imgFixed = saturation.enhance(.3)
-    brightness = ImageEnhance.Brightness(imgFixed)
-    imgFixed = brightness.enhance(1.8)
-    r, g, b = imgFixed.split()
-    g = g.point(lambda i: i * .9) # slightly less green
-    b = b.point(lambda i: i * .8) # less blue
-    imgFixed = Image.merge('RGB', (r, g, b))
+        # desaturated version to overlay
+        saturation = ImageEnhance.Color(img)
+        imgFixed = saturation.enhance(.3)
+        brightness = ImageEnhance.Brightness(imgFixed)
+        imgFixed = brightness.enhance(1.8)
+        r, g, b = imgFixed.split()
+        g = g.point(lambda i: i * .9) # slightly less green
+        b = b.point(lambda i: i * .8) # less blue
+        imgFixed = Image.merge('RGB', (r, g, b))
 
-    # save
-    preparedImagePath = os.path.join(scriptDir, prepareName + prepareExt)
-    imgFixed.save(preparedImagePath)
+        # save
+        imgFixed.save(preparedImagePath)
+
+    else:
+        # Just copy the file instead of processing it.
+        shutil.copy(imagePath, preparedImagePath)
+
     
     return preparedImagePath
 
 
 def uploadToGoogle(filepath):
-    rclone.copy(filepath, drive, ignore_existing=False)
+    rclone.copy(filepath, drive + date, ignore_existing=False, args=['--create-empty-src-dirs'])
 
 
 # upload file path to hosting (overwrites old file, if any!)
