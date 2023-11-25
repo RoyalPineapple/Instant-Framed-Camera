@@ -1,16 +1,31 @@
+# Raspberry Pi Setup
 
-# Network Setup
+## Network Setup
 
 Set Hostname
 `sudo raspi-config`
 
+Remove GUI Setup agent
+`sudo rm /etc/xdg/autostart/piwiz.desktop`
 
-# Speedup Hacks
+
+## rclone setup
+Install from apt
+`sudo apt install rclone`
+
+configure google drive as a new remote, dont provide oauth clientid and secret. use the blank defaults
+https://rclone.org/drive/ for headless configuration check out https://rclone.org/remote_setup/
+`rclone config`
+
+Install python wrapper
+`pip install rclone-python`
+
+
+## Speedup Hacks
 
 Cribbed from http://himeshp.blogspot.com/2018/08/fast-boot-with-raspberry-pi.html
 
-## Edit `/boot/config.txt`
-
+### Edit `/boot/config.txt`
 ```
 # Disable the rainbow splash screen
 disable_splash=1
@@ -23,9 +38,9 @@ boot_delay=0
 
 ```
 
-## Create a systemd service
+## Configure systemd service
 
-create `/etc/systemd/system/racooncam.service`
+### Create `/etc/systemd/system/racooncam.service`
 ```
 [Unit]
 Description=Starts Racoon Cam Service
@@ -42,6 +57,19 @@ WorkingDirectory=/home/pi/CAMERA/
 WantedBy=basic.target
 ```
 
+### Controling the service
 
+- Check status, stdout 
+`systemctl status racooncam`
 
+- Enable service, will run at boot.
+`sudo systemctl enable racooncam`
 
+- Start service
+`sudo systemctl start racooncam`
+
+- Start service
+`sudo systemctl stop racooncam`
+
+- Disable service, will not run at boot.
+`sudo systemctl disable racooncam`
