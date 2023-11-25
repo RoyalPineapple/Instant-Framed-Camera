@@ -18,6 +18,8 @@ from pyzbar.pyzbar import decode
 from picamera2 import Picamera2
 from libcamera import controls
 import RPi.GPIO as GPIO
+from rclone_python import rclone
+
 
 import ftplib
 import logins
@@ -31,6 +33,7 @@ captureName = 'captures/capture'
 prepareName = 'captures/img'
 captureExt = '.jpg'
 prepareExt = '.jpg'
+drive = "drive:captures"
 buttonPressCooldown = 0.5
 newCaptureCooldown = 69
 blinkingSpeed = 3
@@ -199,6 +202,9 @@ def prepareImage(imagePath):
     return preparedImagePath
 
 
+def uploadToGoogle(filepath):
+    rclone.copy(filepath, drive, ignore_existing=False)
+
 
 # upload file path to hosting (overwrites old file, if any!)
 def uploading(filepath):
@@ -216,7 +222,8 @@ def uploading(filepath):
 # start upload
 def uploadImageToHosting(filepath):
     try:
-        uploading(filepath)
+        uploadToGoogle(filepath)
+        # uploading(filepath)
         return True
 
     except Exception as e1: # maybe something is wrong with the connection, try once more
