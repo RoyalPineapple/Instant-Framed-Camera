@@ -234,24 +234,10 @@ def uploadToGoogle(filepath):
     rclone.copy(filepath, drive + date, ignore_existing=False, args=['--create-empty-src-dirs'])
 
 
-# upload file path to hosting (overwrites old file, if any!)
-def uploading(filepath):
-    ftp = ftplib.FTP(hostingHost)
-    ftp.login(hostingName, hostingPass)
-
-    filename = os.path.basename(filepath)
-    ftp.encoding = 'utf-8'
-    with open(filepath, 'rb') as ftpup:
-        ftp.storbinary('STOR ' + filename, ftpup)
-    ftp.close()
-
-
-
 # start upload
 def uploadImageToHosting(filepath):
     try:
         uploadToGoogle(filepath)
-        # uploading(filepath)
         return True
 
     except Exception as e1: # maybe something is wrong with the connection, try once more
@@ -261,7 +247,7 @@ def uploadImageToHosting(filepath):
             while True: # keep trying until it works
                 time.sleep(1.5) # arbitrary wait time
                 try:
-                    uploading(filepath)
+                    uploadToGoogle(filepath)
                     return True
                 except Exception as e3:
                     print(f'error while uploading to hosting, trying forever. error: {e3}')
@@ -271,7 +257,7 @@ def uploadImageToHosting(filepath):
             time.sleep(.6) # arbitrary wait time
 
             try:
-                uploading(filepath)
+                uploadToGoogle(filepath)
                 return True
 
             except Exception as e2: # not working, cancel, picture is lost
@@ -284,7 +270,6 @@ def uploadImageToHosting(filepath):
 def deleteFiles(files):
     for f in files:
         os.remove(f)
-        
         
 
 # button checking loop
