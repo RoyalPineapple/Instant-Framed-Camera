@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # Instant Framed Camera - CAMERA MAIN SCRIPT
 # by Max van Leeuwen
 
@@ -24,7 +26,6 @@ from rclone_python import rclone
 
 
 import ftplib
-import logins
 
 
 # flags
@@ -44,10 +45,6 @@ drive = "drive:captures/"
 buttonPressCooldown = 0.5
 newCaptureCooldown = 69
 blinkingSpeed = 3
-hostingHost = logins.HOSTNAME
-hostingName = logins.USERNAME
-hostingPass = logins.PASSWORD
-
 
 
 # placeholders
