@@ -16,14 +16,33 @@ import os
 import time
 import shutil
 
+from enum import Enum
 from datetime import datetime
+
 from picamera2 import Picamera2
 from libcamera import controls
+
 import RPi.GPIO as GPIO
+
 from rclone_python import rclone
 
 import utilities
 import wifi
+
+
+class State(Enum):
+    INIT = 1
+    CONNECTING = 2
+    NOWIFI = 3
+    READY = 4
+    CAPTURING = 5
+    PROCESSING = 6
+    UPLOADING = 7
+    NOUPLOAD = 8
+    COOLDOWN = 9
+
+# State
+stateMachine = State.INIT
 
 # flags
 processForEInk = True
@@ -68,8 +87,8 @@ def initCam():
     global cam
     cam = Picamera2()
     cam.start()
-    # cam.set_controls({"AfMode": controls.AfModeEnum.Auto, "AfSpeed": controls.AfSpeedEnum.Fast})
-    cam.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 0.3}) # 3.33m away (dioptres)
+    cam.set_controls({"AfMode": controls.AfModeEnum.Auto, "AfSpeed": controls.AfSpeedEnum.Fast})
+    # cam.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 0.3}) # 3.33m away (dioptres)
 
 
 
@@ -175,13 +194,20 @@ def deleteFiles(files):
         os.remove(f)
         
 
+def isInCooldown():
+    return stateMachine == State.COOLDOWN
+
+
 # button checking loop
-def startButton(callback):
+def startLoop(callback):
     global gpioPrv
     global lastButtonPressTime
     global lastCaptureTime
-    global isInCooldown
+    global stateMachine
     
+
+    stateMachine = State.READY
+
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(gpiopin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     gpioPrv = "null"
@@ -221,27 +247,31 @@ def startButton(callback):
                     capturedImagePath = captureImage()
 
                     # connect to Wifi from QR (if any)
-                    wifi.connectToWifiFromQR(capturedImagePath)
+                    if wifi.connectToWifiFromQR(capturedImagePath):
+                        print("Connected to WiFi")
+                    else:
+                        print("No WiFi QR found")
 
                     # delete from local storage
                     deleteFiles([capturedImagePath])
 
         if(passedCaptureCooldown): # if no more cooldowns
-            if(isInCooldown): # switch once when cooldown stops
-                isInCooldown = False
+            if(isInCooldown()): # switch once when cooldown stops
                 print('cooldown done, listening for button press')
+                stateMachine = State.READY
                 enableLight(True) # stop blinking
 
             if(pressedSignal): # if button is pressed
-                isInCooldown = True # start cooldown
+                stateMachine = State.COOLDOWN
                 success = callback()
                 if not success: # disable cooldown when not succeeded to send to display (also when scanning wifi qr)
                     print('skipping cooldown')
-                    isInCooldown = False
+                    # isInCooldown = False\
+                    stateMachine = State.READY
                     lastCaptureTime -= newCaptureCooldown # offset to disable
 
 
-        if isInCooldown:
+        if isInCooldown():
             enableLight(getLightBlinking(thisTime)) # light blinking
 
 
@@ -256,7 +286,9 @@ def getLightBlinking(t):
 # if button was pressed
 def buttonPressed():
     global blinkingStartTime
+    global stateMachine
 
+    stateMachine = State.CAPTURING
     print('- button pressed!')
     print('taking capture')
 
@@ -282,13 +314,13 @@ def buttonPressed():
     print('preparing image')
     
     # prepare for display
+    stateMachine = State.PROCESSING
     preparedImagePath = prepareImage(capturedImagePath)
 
     print('uploading to hosting')
-    
+    stateMachine = State.UPLOADING
     # uploading to hosting
     uploadSuccess = uploadImageToHosting(preparedImagePath)
-
     print('deleting local files')
 
     # delete from local storage
@@ -296,9 +328,11 @@ def buttonPressed():
     
     if not uploadSuccess:
         # if failed to upload, ignore
+        stateMachine = State.NOUPLOAD
         enableLight(True)
         return False
     
+    stateMachine = State.COOLDOWN
     print('done! cooldown started')
 
     return True
@@ -308,7 +342,7 @@ def buttonPressed():
 # start
 def start():
     initCam()
-    startButton(buttonPressed)
+    startLoop(buttonPressed)
 
 
 try:
@@ -316,5 +350,6 @@ try:
     time.sleep(1) # arbitrary wait time to initialize (camera module seemed to have a some issues without this)
     start()
 except:
+    print(f"Exiting stateMachine = {stateMachine.name}")
     enableLight(False)
     raise
