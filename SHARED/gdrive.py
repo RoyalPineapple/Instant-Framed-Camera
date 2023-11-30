@@ -17,7 +17,7 @@ def downloadMostRecent(downloadPath):
         raise Exception("No Results")
 
     sort = sorted(results, key=operator.itemgetter('Path')) 
-    mostRecent = sort[0]
+    mostRecent = sort[-1]
     print(f"Found most recent image: {mostRecent}")
 
     sourcePath = mostRecent["Path"]

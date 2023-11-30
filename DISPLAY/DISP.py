@@ -47,10 +47,6 @@ hostingDownloadInterval = 600 # Ten minutes
 
 size = 600, 448
 
-processForEInk = False
-
-
-
 # placeholders
 scriptPath = os.path.realpath(__file__)
 scriptDir = os.path.dirname(scriptPath)
@@ -58,77 +54,47 @@ scriptDir = os.path.dirname(scriptPath)
 
 epd = epd5in65f.EPD()
 
-
-
-
-
 # GPIO setup
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 buttonIndex = 16 # BOARD number 10
 GPIO.setup(buttonIndex, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
+import argparse
 
-def queryGoogle():
-    results = rclone.ls(drive, max_depth="4", files_only=True)
-    if not results:
-        raise Exception("No Results")
+# Construct the argument parser
+ap = argparse.ArgumentParser()
 
-    sort = sorted(results, key=operator.itemgetter('Path')) 
-    print(sort)
-    mostRecent = sort[0]
-    print(f"mostRecent: {mostRecent}")
+# Add the arguments to the parser
+ap.add_argument("-p", "--process", required=False, action='store_true',
+   help="process image for e-ink")
 
-    sourcePath = mostRecent["Path"]
-    fileName = mostRecent["Name"]
-    downloadPath = os.path.join(scriptDir, captureFolderName)
-    
-    print(f"Downloading: {sourcePath}")
-    rclone.copy(drive + sourcePath, downloadPath, ignore_existing=False)
-
-    return os.path.join(downloadPath, fileName)
+args = vars(ap.parse_args())
+processForEInk = args['process']
 
 
+def downloadAndDisplay():
+    try:
+        downloadPath = os.path.join(scriptDir, captureFolderName)
+        filePath = gdrive.downloadMostRecent(downloadPath)
+        print('preparing image')
 
-def loop():
-    while True:
-        try:
+        # prepare (most work has already been done by CAM)
+        preparePath = prepareImage(filePath)
 
-            try:
-                downloadPath = os.path.join(scriptDir, captureFolderName)
-                filePath = gdrive.downloadMostRecent(downloadPath)
-                print('preparing image')
+        print('starting image display')
 
-                # prepare (most work has already been done by CAM)
-                preparePath = prepareImage(filePath)
+        # send to display
+        displayImage(preparePath)
 
-                print('starting image display')
+        print('clearing local storage')
 
-                # send to display
-                displayImage(preparePath)
+        # clear local storage
+        deleteFiles([filePath, preparePath])
 
-                print('clearing local storage')
-
-                # clear local storage
-                deleteFiles([filePath, preparePath])
-
-            except Exception as e:
-                print(f'no new image found on server. or there was an error: {e}')
-                pass
-
-
-        except Exception as e:
-            # connection might not be stable, ignore
-            print('failed, ignoring (might be no wifi)')
-            print(f"there was an error: {e}")
-            pass
-
-        # loop hosting check at interval, check for button press inbetween
-        t_end = time.time() + hostingDownloadInterval
-        while time.time() < t_end:
-            if GPIO.input(buttonIndex) == GPIO.HIGH:
-                buttonPressed()
-
+    except Exception as e:
+        print(f'no new image found on server. or there was an error: {e}')
+        pass
 
 
 # reset the image on the display
@@ -164,18 +130,27 @@ def displayImage(imagePath):
     
 
 
-
-
 # delete from local storage
 def deleteFiles(files):
     for f in files:
         os.remove(f)
 
 
-
 def buttonPressed():
     print('button pressed')
-    clearDisplay()
+    downloadAndDisplay()
+
+def loop():
+    while True:
+        try:
+
+        downloadAndDisplay()
+
+        # loop hosting check at interval, check for button press inbetween
+        t_end = time.time() + hostingDownloadInterval
+        while time.time() < t_end:
+            if GPIO.input(buttonIndex) == GPIO.HIGH:
+                buttonPressed()
 
 
 
@@ -185,15 +160,6 @@ def start():
     epd.init()
 
     print('- Beginning loop')
-
-    # image = queryGoogle()
-    # preparedImage = prepareImage(image)
-
-
-    # epd.init()
-
-    # displayImage(preparedImage)
-
     loop()
 
 try:
