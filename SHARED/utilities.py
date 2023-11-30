@@ -4,13 +4,20 @@ from PIL import Image, ImageOps, ImageEnhance, ImageMath
 def processForEInk(imagePath, outputPath, imgSize):
 
         # get image
+        print("Processing begin")
+
+        print(f"- Opening imag {imagePath}")
         img = Image.open(imagePath)
 
+        print(f"- Resizing image: {imgSize}")
         # correct resolution for display
         img = ImageOps.fit(img, imgSize)
-
+        
+        print("- Converting to RGB")
         # make RGB only
         img.convert('RGB')
+
+        print("- Adjusting saturation")
 
         # initial overall saturation
         saturation = ImageEnhance.Color(img)
@@ -32,4 +39,6 @@ def processForEInk(imagePath, outputPath, imgSize):
         imgFixed = Image.merge('RGB', (r, g, b))
 
         # save
+        print(f"- Saving file: {outputPath}")
         imgFixed.save(outputPath)
+

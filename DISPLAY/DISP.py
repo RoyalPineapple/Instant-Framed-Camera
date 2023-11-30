@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # Instant Framed Camera - DISPLAY MAIN SCRIPT
 # by Max van Leeuwen
 
@@ -13,32 +15,39 @@ from __future__ import print_function
 
 import os
 import ftplib
-import logins
 import sys
 
+from rclone_python import rclone
 from PIL import Image
 
 import time
 
 import RPi.GPIO as GPIO
+from waveshare_epd import epd5in65f
+
 
 libdir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'lib')
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
-from waveshare_epd import epd5in65f
 
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
+sys.path.append(os.path.abspath('../SHARED'))
+import utilities
+import gdrive
+
 
 
 # params
-captureFolderName = 'capture/'
-fileName = 'img.jpg'
-prepareName = "img.bmp"
-prepareExt = ".bmp"
-hostingDownloadInterval = 5 # seconds
+captureFolderName = 'captures/'
+prepareName = "prepared.bmp"
+hostingDownloadInterval = 600 # Ten minutes
+
+size = 600, 448
+
+processForEInk = False
 
 
 
@@ -46,13 +55,10 @@ hostingDownloadInterval = 5 # seconds
 scriptPath = os.path.realpath(__file__)
 scriptDir = os.path.dirname(scriptPath)
 
-hostingHost = logins.HOSTNAME
-hostingName = logins.USERNAME
-hostingPass = logins.PASSWORD
-
-filePath = os.path.join(scriptDir, captureFolderName + fileName)
 
 epd = epd5in65f.EPD()
+
+
 
 
 
@@ -63,39 +69,34 @@ buttonIndex = 16 # BOARD number 10
 GPIO.setup(buttonIndex, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 
+def queryGoogle():
+    results = rclone.ls(drive, max_depth="4", files_only=True)
+    if not results:
+        raise Exception("No Results")
 
-# stay in sync with hosting
-def checkHost():
-    while True: # on a loop
-        print('- start sync')
+    sort = sorted(results, key=operator.itemgetter('Path')) 
+    print(sort)
+    mostRecent = sort[0]
+    print(f"mostRecent: {mostRecent}")
 
-        # create ftp connection
+    sourcePath = mostRecent["Path"]
+    fileName = mostRecent["Name"]
+    downloadPath = os.path.join(scriptDir, captureFolderName)
+    
+    print(f"Downloading: {sourcePath}")
+    rclone.copy(drive + sourcePath, downloadPath, ignore_existing=False)
+
+    return os.path.join(downloadPath, fileName)
+
+
+
+def loop():
+    while True:
         try:
-            print('logging in ftp')
-
-            # log in
-            ftp = ftplib.FTP(hostingHost)
-            ftp.login(hostingName, hostingPass)
-            ftp.encoding = 'utf-8'
-
-            downloadSucces = False
 
             try:
-                print(f'ftp download file to: {filePath}')
-                with open(filePath, 'wb') as f:
-                    ftp.retrbinary('RETR ' + fileName, f.write)
-
-                downloadSucces = True
-
-                print('deleting file from hosting')
-                ftp.delete(fileName)
-                    
-            except Exception as e:
-                print(f'no new image found on server. or there was an error: {e}')
-                pass
-
-
-            if downloadSucces:
+                downloadPath = os.path.join(scriptDir, captureFolderName)
+                filePath = gdrive.downloadMostRecent(downloadPath)
                 print('preparing image')
 
                 # prepare (most work has already been done by CAM)
@@ -111,14 +112,16 @@ def checkHost():
                 # clear local storage
                 deleteFiles([filePath, preparePath])
 
-            print('logging out ftp')
-            ftp.close()
+            except Exception as e:
+                print(f'no new image found on server. or there was an error: {e}')
+                pass
 
-        except:
+
+        except Exception as e:
             # connection might not be stable, ignore
             print('failed, ignoring (might be no wifi)')
+            print(f"there was an error: {e}")
             pass
-
 
         # loop hosting check at interval, check for button press inbetween
         t_end = time.time() + hostingDownloadInterval
@@ -130,43 +133,36 @@ def checkHost():
 
 # reset the image on the display
 def clearDisplay():
-    epd.init()
     print("clearing display")
     epd.Clear()
 
 
-
 # prepare any image for the display
 def prepareImage(imagePath):
-    # get image
-    img = Image.open(imagePath)
-
-    # save
     preparedImagePath = os.path.join(scriptDir, captureFolderName + prepareName)
-    print(f'saving prepared image to {preparedImagePath}')
-    img.save(preparedImagePath)
-    
-    return preparedImagePath
 
+
+    if processForEInk:
+            utilities.processForEInk(imagePath, preparedImagePath, size)
+    else:
+        # # get image
+        img = Image.open(imagePath)
+        print(f'saving prepared image to {preparedImagePath}')
+        img.save(preparedImagePath)
+
+    return preparedImagePath
 
 
 # show a bmp (prepared) on the display
 def displayImage(imagePath):
-    try:
-        clearDisplay()
+    clearDisplay()
 
-        print("displaying new image")
-        Himage = Image.open(imagePath)
-        epd.display(epd.getbuffer(Himage))
-        epd.sleep()
-        
-    except IOError as e:
-        print(f'error while displaying image: {e}')
-        
-    except KeyboardInterrupt:    
-        print("interrupted using keyboard (ctrl + c)")
-        epd5in65f.epdconfig.module_exit()
-        exit()
+    print("displaying new image")
+    Himage = Image.open(imagePath)
+    epd.display(epd.getbuffer(Himage))
+    epd.sleep()
+    
+
 
 
 
@@ -177,7 +173,6 @@ def deleteFiles(files):
 
 
 
-# if button is pressed in interval inbetween hosting checks
 def buttonPressed():
     print('button pressed')
     clearDisplay()
@@ -186,8 +181,28 @@ def buttonPressed():
 
 # start DISP
 def start():
-    print('- started')
+    print('- init')
+    epd.init()
 
-    checkHost()
+    print('- Beginning loop')
 
-start()
+    # image = queryGoogle()
+    # preparedImage = prepareImage(image)
+
+
+    # epd.init()
+
+    # displayImage(preparedImage)
+
+    loop()
+
+try:
+    start()
+
+except IOError as e:
+    print(f"IOError: {e}")
+    
+except KeyboardInterrupt:    
+    print("ctrl + c:")
+    epd5in65f.epdconfig.module_exit()
+    exit()

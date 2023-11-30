@@ -15,6 +15,7 @@
 import os
 import time
 import shutil
+import sys
 
 from enum import Enum
 from datetime import datetime
@@ -26,6 +27,7 @@ import RPi.GPIO as GPIO
 
 from rclone_python import rclone
 
+sys.path.append(os.path.abspath('../SHARED'))
 import utilities
 import wifi
 
@@ -46,11 +48,13 @@ stateMachine = State.INIT
 
 # flags
 processForEInk = True
+size = 600, 448
 
 
 # params
 keepTryingConnectionForever = False
-size = 600, 448
+retryConnectionCount = 4
+
 
 
 captureName = 'capture'
@@ -163,7 +167,8 @@ def uploadImageToHosting(filepath):
         return True
 
     except Exception as e1: # maybe something is wrong with the connection, try once more
-        if(keepTryingConnectionForever):
+        triesRemaining = retryConnectionCount
+        if(keepTryingConnectionForever or triesRemaining > 0):
             print(f'error while uploading to hosting, trying forever. error: {e1}')
 
             while True: # keep trying until it works
@@ -172,7 +177,12 @@ def uploadImageToHosting(filepath):
                     uploadToGoogle(filepath)
                     return True
                 except Exception as e3:
-                    print(f'error while uploading to hosting, trying forever. error: {e3}')
+                    triesRemaining -= 1
+                    if keepTryingConnectionForever:
+                        print(f'error while uploading to hosting, trying forever. error: {e3}')
+                    else:
+                      print(f'error while uploading to hosting, trying {triesRemaining} more times. error: {e3}')
+
             
         else:
             print(f'error while uploading to hosting, trying again. error: {e1}')
