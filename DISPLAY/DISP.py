@@ -43,7 +43,7 @@ import gdrive
 # params
 captureFolderName = 'captures/'
 prepareName = "prepared.bmp"
-hostingDownloadInterval = 600 # Ten minutes
+hostingDownloadInterval = 10 # Ten Secon
 
 size = 600, 448
 
@@ -76,32 +76,27 @@ processForEInk = args['process']
 def downloadAndDisplay():
     try:
         downloadPath = os.path.join(scriptDir, captureFolderName)
-        filePath = gdrive.downloadMostRecent(downloadPath)
-        print('preparing image')
+        (filePath, driveID) = gdrive.downloadMostRecent(downloadPath)
 
-        # prepare (most work has already been done by CAM)
+        print('preparing image')
         preparePath = prepareImage(filePath)
 
         print('starting image display')
-
-        # send to display
         displayImage(preparePath)
 
-        print('clearing local storage')
-
-        # clear local storage
+        gdrive.writeToCache(driveID)
         deleteFiles([filePath, preparePath])
 
     except Exception as e:
-        print(f'no new image found on server. or there was an error: {e}')
+        print(f'Error during download and display: {e}')
         pass
 
 
 # reset the image on the display
 def clearDisplay():
+    epd.init()
     print("clearing display")
     epd.Clear()
-
 
 # prepare any image for the display
 def prepareImage(imagePath):
@@ -126,12 +121,15 @@ def displayImage(imagePath):
     print("displaying new image")
     Himage = Image.open(imagePath)
     epd.display(epd.getbuffer(Himage))
-    epd.sleep()
+    # epd.sleep()
+    epd5in65f.epdconfig.module_exit()
+
     
 
 
 # delete from local storage
 def deleteFiles(files):
+    print('clearing local storage.')
     for f in files:
         os.remove(f)
 
@@ -142,10 +140,7 @@ def buttonPressed():
 
 def loop():
     while True:
-        try:
-
         downloadAndDisplay()
-
         # loop hosting check at interval, check for button press inbetween
         t_end = time.time() + hostingDownloadInterval
         while time.time() < t_end:
@@ -158,6 +153,7 @@ def loop():
 def start():
     print('- init')
     epd.init()
+    gdrive.clearCache()
 
     print('- Beginning loop')
     loop()

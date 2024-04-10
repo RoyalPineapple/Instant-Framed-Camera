@@ -77,7 +77,10 @@ datePath = os.path.join(scriptDir, basePath + date)
 
 
 cam = None
-gpiopin = 21
+
+buttonPin = 21
+ledPin = 18
+
 gpioPrv = None
 lastButtonPressTime = 0
 lastCaptureTime = 0
@@ -97,7 +100,6 @@ def initCam():
 
 
 def enableLight(v):
-    ledPin = 18
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
     GPIO.setup(ledPin, GPIO.OUT)
@@ -178,10 +180,13 @@ def uploadImageToHosting(filepath):
                     return True
                 except Exception as e3:
                     triesRemaining -= 1
+                    
                     if keepTryingConnectionForever:
                         print(f'error while uploading to hosting, trying forever. error: {e3}')
                     else:
-                      print(f'error while uploading to hosting, trying {triesRemaining} more times. error: {e3}')
+                        if triesRemaining == 0:
+                            return False
+                        print(f'error while uploading to hosting, trying {triesRemaining} more times. error: {e3}')
 
             
         else:
@@ -219,11 +224,11 @@ def startLoop(callback):
     stateMachine = State.READY
 
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(gpiopin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(buttonPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     gpioPrv = "null"
     
     while True:
-        state = GPIO.input(gpiopin)
+        state = GPIO.input(buttonPin)
         thisTime = time.time()
         pressedSignal = False
 

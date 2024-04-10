@@ -52,6 +52,8 @@ SyslogIdentifier=piservice
 User=pi
 Group=pi
 WorkingDirectory=/home/pi/CAMERA/
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=basic.target
@@ -73,3 +75,15 @@ WantedBy=basic.target
 
 - Disable service, will not run at boot.
 `sudo systemctl disable racooncam`
+
+
+## E-Paper setup
+enable SPI 
+`sudo raspi-config`
+
+
+Clone Waveshare Repo
+`git clone https://github.com/waveshareteam/e-Paper.git`
+
+Install python library
+`pushd e-Paper/RaspberryPi_JetsonNano/python/ && sudo python3 setup.py install && popd`
